@@ -265,7 +265,7 @@ async function buildZip(files) {
     eocdView.setUint16(10, files.length, true); // Total number of entries
     eocdView.setUint32(12, centralDirSize, true); // Size of central directory
     eocdView.setUint32(16, centralDirOffset, true); // Offset of central directory
-    eocdView.setUint18(20, 0, true); // Comment length
+    eocdView.setUint16(20, 0, true); // Comment length
 
     // Combine all parts
     const totalSize = offset + centralDirSize + 22;
