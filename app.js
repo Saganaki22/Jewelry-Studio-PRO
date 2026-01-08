@@ -158,6 +158,9 @@
         div.id = `card-${item.id}`;
         div.innerHTML = `
             <div class="status-pill" id="status-${item.id}">Pending</div>
+            <button class="remove-btn" id="remove-${item.id}" title="Long press to remove">
+                <i data-lucide="x"></i>
+            </button>
             <img src="${item.preview}" id="img-${item.id}" alt="${item.name}">
             <div class="card-meta">
                 <div class="card-text">
@@ -171,6 +174,66 @@
         `;
         elements.resultsGrid.appendChild(div);
         lucide.createIcons();
+
+        // Add long press handler
+        initLongPress(`remove-${item.id}`, item.id);
+    }
+
+    function initLongPress(btnId, itemId) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+
+        let pressTimer = null;
+        let isRemoved = false;
+
+        const startPress = (e) => {
+            e.preventDefault();
+            isRemoved = false;
+            btn.classList.add('pressing');
+            btn.style.animation = 'pulse 0.5s ease-in-out infinite';
+
+            pressTimer = setTimeout(() => {
+                // Long press triggered
+                isRemoved = true;
+                btn.classList.remove('pressing');
+                btn.style.animation = '';
+                removeItem(itemId);
+            }, 2000);
+        };
+
+        const cancelPress = () => {
+            if (pressTimer) {
+                clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+            btn.classList.remove('pressing');
+            btn.style.animation = '';
+        };
+
+        btn.addEventListener('mousedown', startPress);
+        btn.addEventListener('mouseup', cancelPress);
+        btn.addEventListener('mouseleave', cancelPress);
+        btn.addEventListener('touchstart', startPress);
+        btn.addEventListener('touchend', cancelPress);
+        btn.addEventListener('touchcancel', cancelPress);
+    }
+
+    function removeItem(itemId) {
+        const index = state.queue.findIndex(i => i.id === itemId);
+        if (index === -1) return;
+
+        const item = state.queue[index];
+        state.queue.splice(index, 1);
+
+        const card = document.getElementById(`card-${itemId}`);
+        if (card) {
+            card.style.transform = 'scale(0.8)';
+            card.style.opacity = '0';
+            setTimeout(() => card.remove(), 200);
+        }
+
+        log(`Removed: ${item.name}`);
+        updateStats();
     }
 
     function updateCardStatus(itemId, status, description = null) {

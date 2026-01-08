@@ -1,3 +1,9 @@
+/* Animations */
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
 :root {
     --primary: #d4af37;
     --primary-hover: #f1c40f;
@@ -113,6 +119,16 @@ input:focus { border-color: var(--primary); }
     position: absolute; top: 12px; left: 12px; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: bold; text-transform: uppercase;
     background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
 }
+
+.remove-btn {
+    position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(0,0,0,0.6); border: none; color: white; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: 0.2s;
+    backdrop-filter: blur(4px);
+}
+.remove-btn:hover { background: var(--danger); }
+.remove-btn:active { transform: scale(0.9); }
+.remove-btn.pressing { background: var(--danger); transform: scale(0.9); }
 
 /* Buttons */
 .btn {
