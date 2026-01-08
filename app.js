@@ -256,7 +256,8 @@
     // WORKER COMMUNICATION
     // ============================================
     function initWorker() {
-        state.worker = new Worker('worker.js');
+        const cacheBuster = '?t=' + Date.now();
+        state.worker = new Worker('worker.js' + cacheBuster);
 
         state.worker.onmessage = (e) => {
             const { type, data } = e.data;
