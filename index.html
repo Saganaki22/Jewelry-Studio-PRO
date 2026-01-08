@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jewelry Studio Pro | Batch Engine</title>
+    <!-- Libraries -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- App Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo"><i data-lucide="sparkles"></i> JEWELRY STUDIO PRO</div>
+
+        <div class="input-group">
+            <label>API Key</label>
+            <input type="password" id="apiKey" placeholder="Gemini API Key...">
+        </div>
+
+        <div class="input-group">
+            <label>Load Images or ZIP</label>
+            <div class="dropzone" id="dropzone">
+                <i data-lucide="upload" size="24"></i>
+                <div style="font-size: 0.8rem; margin-top: 8px; font-weight: bold;">Drop files or .zip</div>
+            </div>
+            <input type="file" id="fileInput" multiple accept="image/*,.zip" style="display:none">
+        </div>
+
+        <div class="input-group">
+            <label>Configuration</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <select id="resolution">
+                    <option value="1K">1K Res</option>
+                    <option value="2K">2K High</option>
+                </select>
+                <select id="aspectRatio">
+                    <option value="auto">Auto</option>
+                    <option value="1:1">1:1 Square</option>
+                    <option value="16:9">16:9 Landscape</option>
+                    <option value="9:16">9:16 Portrait</option>
+                    <option value="4:3">4:3 Ratio</option>
+                    <option value="3:4">3:4 Ratio</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <label>Global Creative Direction</label>
+            <textarea id="stylePrompt" rows="3" placeholder="e.g. High-end Vogue photography, luxury skin texture, soft bokeh..."></textarea>
+        </div>
+
+        <button class="btn btn-primary" id="startBtn" onclick="startBatch()">
+            <i data-lucide="play-circle"></i> RUN BATCH ENGINE
+        </button>
+        <button class="btn btn-stop" id="stopBtn" onclick="stopBatch()">
+            <i data-lucide="octagon"></i> STOP
+        </button>
+
+        <!-- Console -->
+        <div class="console-container">
+            <div class="console-header">LIVE REQUEST CONSOLE</div>
+            <div id="debugConsole">System initialized...</div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="header-bar">
+            <div>
+                <h2 style="margin:0; font-size: 1rem;">Batch Queue</h2>
+                <span id="statsLabel" style="font-size: 0.7rem; color: var(--text-dim);">No items loaded</span>
+            </div>
+            <div class="progress-wrap">
+                <div class="progress-bg"><div id="progressFill"></div></div>
+            </div>
+            <button class="btn btn-icon" id="zipDownloadBtn" onclick="downloadAsZip()" disabled title="Download all as ZIP">
+                <i data-lucide="file-archive"></i> EXPORT ZIP
+            </button>
+        </div>
+
+        <div class="results-grid" id="resultsGrid">
+            <!-- Items injected here -->
+        </div>
+    </main>
+</div>
+
+<!-- App Script -->
+<script src="app.js"></script>
+</body>
+</html>
