@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jewelry Studio Pro | Batch Engine</title>
+    <meta property="og:image" content="static/og.jpg">
+    <meta property="og:title" content="Jewelry Studio Pro | Batch Engine">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="static/og.jpg">
+    <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
     <!-- Libraries -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -18,8 +23,13 @@
         <div class="logo"><i data-lucide="sparkles"></i> JEWELRY STUDIO PRO</div>
 
         <div class="input-group">
-            <label>API Key</label>
-            <input type="password" id="apiKey" placeholder="Gemini API Key...">
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" class="api-key-label-link">API Key</a>
+            <div class="api-key-wrapper">
+                <input type="password" id="apiKey" placeholder="Gemini API Key...">
+                <button class="paste-btn" id="pasteBtn" title="Paste API Key">
+                    <i data-lucide="clipboard"></i>
+                </button>
+            </div>
         </div>
 
         <div class="input-group">
@@ -60,6 +70,13 @@
         <button class="btn btn-stop" id="stopBtn" onclick="stopBatch()">
             <i data-lucide="octagon"></i> STOP
         </button>
+        <button class="btn btn-delete-all" id="deleteAllBtn">
+            <div class="delete-progress-ring"></div>
+            <div class="delete-content">
+                <i data-lucide="trash-2"></i>
+                <span>DELETE ALL</span>
+            </div>
+        </button>
 
         <!-- Console -->
         <div class="console-container">
@@ -87,6 +104,24 @@
             <!-- Items injected here -->
         </div>
     </main>
+</div>
+
+<!-- Delete All Confirmation Modal -->
+<div class="modal-overlay" id="deleteConfirmModal" style="display:none">
+    <div class="modal">
+        <div class="modal-header">
+            <i data-lucide="alert-triangle" class="warning-icon"></i>
+            <h3>Confirm Delete All</h3>
+        </div>
+        <div class="modal-body">
+            <p>This will permanently remove all <span id="deleteCount">0</span> images from the queue.</p>
+            <p><strong>This action cannot be undone.</strong></p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" id="cancelDelete">Cancel</button>
+            <button class="btn btn-danger" id="confirmDelete">Yes, Delete All</button>
+        </div>
+    </div>
 </div>
 
 <!-- App Script -->

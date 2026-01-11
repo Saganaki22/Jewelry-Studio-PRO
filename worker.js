@@ -3,11 +3,22 @@
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
+let isAborted = false;
 
 self.onmessage = async function(e) {
     const { type, data } = e.data;
 
+    if (type === 'shutdown') {
+        isAborted = true;
+        return;
+    }
+
     if (type === 'processBatch') {
+        isAborted = false;
+        self.postMessage({
+            type: 'log',
+            data: { message: 'Worker received batch with ' + data.items.length + ' items', level: 'info' }
+        });
         await processBatch(data);
     } else if (type === 'createZip') {
         await createZip(data);
@@ -16,46 +27,69 @@ self.onmessage = async function(e) {
 
 async function processBatch({ items, apiKey, config }) {
     let completed = 0;
+    const BATCH_SIZE = 5;
 
-    for (const item of items) {
-        try {
-            const result = await processWithRetry(item, apiKey, config);
+    self.postMessage({
+        type: 'log',
+        data: { message: `Starting batch of ${items.length} items (processing ${BATCH_SIZE} at a time)...`, level: 'info' }
+    });
 
-            if (result.success) {
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+        if (isAborted) {
+            self.postMessage({
+                type: 'log',
+                data: { message: 'Batch processing aborted', level: 'info' }
+            });
+            return;
+        }
+
+        const batch = items.slice(i, i + BATCH_SIZE);
+
+        batch.forEach(item => {
+            self.postMessage({
+                type: 'processing',
+                data: { itemId: item.id }
+            });
+        });
+
+        const results = await Promise.allSettled(
+            batch.map(item => processWithRetry(item, apiKey, config))
+        );
+
+        results.forEach((result, index) => {
+            const item = batch[index];
+
+            if (result.status === 'fulfilled' && result.value.success) {
                 self.postMessage({
                     type: 'success',
                     data: {
                         itemId: item.id,
-                        imageUrl: result.imageUrl,
-                        description: result.description
+                        imageUrl: result.value.imageUrl,
+                        description: result.value.description
                     }
                 });
             } else {
+                const error = result.status === 'rejected' ? result.reason.message : (result.value?.error || 'Unknown error');
                 self.postMessage({
                     type: 'failed',
                     data: {
                         itemId: item.id,
                         name: item.name,
-                        error: result.error
+                        error: error
                     }
                 });
             }
-        } catch (error) {
-            self.postMessage({
-                type: 'failed',
-                data: {
-                    itemId: item.id,
-                    name: item.name,
-                    error: error.message
-                }
-            });
-        }
+        });
 
-        completed++;
+        completed += batch.length;
         self.postMessage({
             type: 'progress',
             data: { current: completed, total: items.length }
         });
+
+        if (i + BATCH_SIZE < items.length && !isAborted) {
+            await delay(300);
+        }
     }
 
     self.postMessage({ type: 'complete', data: null });
@@ -65,6 +99,10 @@ async function processWithRetry(item, apiKey, config) {
     let attempt = 0;
 
     while (attempt < MAX_RETRIES) {
+        if (isAborted) {
+            throw new Error('Aborted');
+        }
+
         attempt++;
 
         if (attempt > 1) {
@@ -101,6 +139,11 @@ async function processWithRetry(item, apiKey, config) {
 }
 
 async function performApiCall(item, apiKey, config) {
+    self.postMessage({
+        type: 'log',
+        data: { message: 'Preparing API call for: ' + item.name, level: 'info' }
+    });
+    
     const payload = {
         contents: [{
             parts: [
@@ -127,21 +170,54 @@ async function performApiCall(item, apiKey, config) {
         }
     });
 
-    const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${apiKey}`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), 30000);
+
+    let response;
+    try {
+        response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: timeoutController.signal
+            }
+        );
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw new Error('Aborted');
         }
-    );
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            throw new Error('Network error - check connection');
+        }
+        throw error;
+    }
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+            const errorData = await response.json();
+            if (errorData.error?.message) {
+                errorMessage = errorData.error.message;
+            }
+        } catch (e) {
+        }
+        throw new Error(errorMessage);
     }
 
     const json = await response.json();
+
+    self.postMessage({
+        type: 'log',
+        data: {
+            message: 'API response received: ' + JSON.stringify(json).substring(0, 200) + '...',
+            level: 'info'
+        }
+    });
 
     if (!json.candidates || !json.candidates[0]?.content) {
         throw new Error('Empty response from AI');
@@ -151,13 +227,35 @@ async function performApiCall(item, apiKey, config) {
     const imgPart = parts.find(p => p.inlineData || p.inline_data);
     const textPart = parts.find(p => p.text);
 
+    self.postMessage({
+        type: 'log',
+        data: {
+            message: 'Parts found: ' + parts.length + ', Image part: ' + (imgPart ? 'yes' : 'no'),
+            level: 'info'
+        }
+    });
+
     if (!imgPart) {
         throw new Error('AI did not generate an image (Safety Filter?)');
     }
 
     const raw = imgPart.inlineData || imgPart.inline_data;
-    const imageUrl = `data:${raw.mime_type};base64,${raw.data}`;
-    const description = textPart ? textPart.text.substring(0, 40) + '...' : 'Generated';
+    if (!raw || !raw.data) {
+        throw new Error('Invalid image data from API - missing data');
+    }
+    const mimeType = raw.mimeType || raw.mime_type;
+    if (!mimeType) {
+        throw new Error('Invalid image data from API - missing mime_type');
+    }
+
+    try {
+        atob(raw.data);
+    } catch (e) {
+        throw new Error('Corrupted base64 data from API');
+    }
+
+    const imageUrl = `data:${mimeType};base64,${raw.data}`;
+    const description = textPart && textPart.text ? textPart.text.substring(0, 40) + '...' : 'Generated';
 
     return { imageUrl, description };
 }
@@ -173,13 +271,31 @@ async function createZip({ items }) {
     });
 
     try {
-        // Simple ZIP implementation for base64 data
-        const files = items.map(item => ({
-            name: `gen_${item.name}`,
-            data: item.result.split(',')[1]
-        }));
+        const usedNames = new Set();
+        const files = items.map((item, index) => {
+            let name = `gen_${item.name}`;
 
-        // Build ZIP structure manually (avoids importing JSZip in worker)
+            name = name
+                .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+                .replace(/\.{2,}/g, '.')
+                .replace(/^\.+/, '')
+                .substring(0, 255);
+
+            let counter = 1;
+            while (usedNames.has(name)) {
+                const ext = item.name.includes('.') ? '.' + item.name.split('.').pop() : '';
+                const base = item.name.replace(/\.[^/.]+$/, '');
+                name = `gen_${base}_${counter}${ext}`;
+                counter++;
+            }
+
+            usedNames.add(name);
+            return {
+                name,
+                data: item.result.split(',')[1]
+            };
+        });
+
         const zip = await buildZip(files);
 
         self.postMessage({
@@ -195,6 +311,11 @@ async function createZip({ items }) {
 }
 
 async function buildZip(files) {
+    self.postMessage({
+        type: 'log',
+        data: { message: `Processing ${files.length} files for ZIP...`, level: 'info' }
+    });
+
     // Simple ZIP file builder for base64 content
     const encoder = new TextEncoder();
     const fileHeaders = [];
@@ -204,6 +325,14 @@ async function buildZip(files) {
     for (const file of files) {
         const nameBytes = encoder.encode(file.name);
         const dataBytes = Uint8Array.from(atob(file.data), c => c.charCodeAt(0));
+
+        if (files.length > 10 && fileHeaders.length % 10 === 0) {
+            self.postMessage({
+                type: 'log',
+                data: { message: `Zipping... ${fileHeaders.length}/${files.length} processed`, level: 'info' }
+            });
+            await delay(0);
+        }
 
         // Local file header
         const header = new Uint8Array(30 + nameBytes.length);
