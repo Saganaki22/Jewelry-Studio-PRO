@@ -146,6 +146,24 @@
     </div>
 </div>
 
+<!-- Delete Selected Confirmation Modal -->
+<div class="modal-overlay" id="deleteSelectedModal" style="display:none">
+    <div class="modal">
+        <div class="modal-header">
+            <i data-lucide="alert-triangle" class="warning-icon"></i>
+            <h3>Confirm Delete Selected</h3>
+        </div>
+        <div class="modal-body">
+            <p>This will permanently remove <span id="selectedDeleteCount">0</span> selected images.</p>
+            <p><strong>This action cannot be undone.</strong></p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" id="cancelDeleteSelected">Cancel</button>
+            <button class="btn btn-danger" id="confirmDeleteSelected">Yes, Delete Selected</button>
+        </div>
+    </div>
+</div>
+
 <!-- App Script -->
 <script src="app.js"></script>
 </body>

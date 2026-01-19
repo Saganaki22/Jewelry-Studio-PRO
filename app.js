@@ -34,7 +34,8 @@
     const state = {
         queue: [],
         isProcessing: false,
-        worker: null
+        worker: null,
+        selectedItems: new Set()
     };
 
     // ============================================
@@ -54,6 +55,10 @@
         cancelDelete: document.getElementById('cancelDelete'),
         confirmDelete: document.getElementById('confirmDelete'),
         deleteCount: document.getElementById('deleteCount'),
+        deleteSelectedModal: document.getElementById('deleteSelectedModal'),
+        cancelDeleteSelected: document.getElementById('cancelDeleteSelected'),
+        confirmDeleteSelected: document.getElementById('confirmDeleteSelected'),
+        selectedDeleteCount: document.getElementById('selectedDeleteCount'),
         zipDownloadBtn: document.getElementById('zipDownloadBtn'),
         statsLabel: document.getElementById('statsLabel'),
         progressFill: document.getElementById('progressFill'),
@@ -352,7 +357,13 @@
 
         const wrapper = document.getElementById(`wrapper-${item.id}`);
         if (wrapper) {
-            wrapper.addEventListener('click', () => openImageModal(item.id));
+            wrapper.addEventListener('click', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    toggleItemSelection(item.id);
+                } else {
+                    openImageModal(item.id);
+                }
+            });
         }
 
         const removeBtn = document.getElementById(`remove-${item.id}`);
@@ -414,12 +425,55 @@
         btn.addEventListener('touchcancel', cancelPress);
     }
 
+    function toggleItemSelection(itemId) {
+        const card = document.getElementById(`card-${itemId}`);
+        if (!card) return;
+
+        if (state.selectedItems.has(itemId)) {
+            state.selectedItems.delete(itemId);
+            card.classList.remove('selected');
+        } else {
+            state.selectedItems.add(itemId);
+            card.classList.add('selected');
+        }
+
+        updateDeleteButton();
+    }
+
+    function updateDeleteButton() {
+        const btn = elements.deleteAllBtn;
+        const count = state.selectedItems.size;
+        const content = btn.querySelector('.delete-content');
+
+        if (count > 0) {
+            content.querySelector('span').textContent = `DELETE SELECTED (${count})`;
+            btn.classList.add('selected-mode');
+        } else {
+            content.querySelector('span').textContent = 'DELETE ALL';
+            btn.classList.remove('selected-mode');
+        }
+    }
+
+    function clearSelection() {
+        state.selectedItems.forEach(itemId => {
+            const card = document.getElementById(`card-${itemId}`);
+            if (card) card.classList.remove('selected');
+        });
+        state.selectedItems.clear();
+        updateDeleteButton();
+    }
+
     function removeItem(itemId) {
         const index = state.queue.findIndex(i => i.id === itemId);
         if (index === -1) return;
 
         const item = state.queue[index];
         state.queue.splice(index, 1);
+
+        if (state.selectedItems.has(itemId)) {
+            state.selectedItems.delete(itemId);
+            updateDeleteButton();
+        }
 
         const card = document.getElementById(`card-${itemId}`);
         if (card) {
@@ -783,6 +837,11 @@
                 return;
             }
 
+            if (state.selectedItems.size > 0) {
+                showDeleteSelectedConfirm();
+                return;
+            }
+
             startTime = Date.now();
 
             const progressRing = btn.querySelector('.delete-progress-ring');
@@ -858,6 +917,8 @@
 
         setTimeout(() => {
             state.queue = [];
+            state.selectedItems.clear();
+            updateDeleteButton();
             log(`Deleted ${cards.length} images from queue.`);
             updateStats();
         }, cards.length * 30 + 200);
@@ -867,6 +928,45 @@
 
     function cancelDelete() {
         elements.deleteConfirmModal.style.display = 'none';
+    }
+
+    function showDeleteSelectedConfirm() {
+        const count = state.selectedItems.size;
+        elements.selectedDeleteCount.textContent = count;
+        elements.deleteSelectedModal.style.display = 'flex';
+        lucide.createIcons();
+    }
+
+    function cancelDeleteSelected() {
+        elements.deleteSelectedModal.style.display = 'none';
+    }
+
+    function deleteSelectedImages() {
+        const selectedIds = Array.from(state.selectedItems);
+        const cards = elements.resultsGrid.querySelectorAll('.result-card');
+
+        let deletedCount = 0;
+        cards.forEach((card, index) => {
+            const itemId = card.id.replace('card-', '');
+            if (state.selectedItems.has(itemId)) {
+                setTimeout(() => {
+                    card.style.transform = 'scale(0.8)';
+                    card.style.opacity = '0';
+                    setTimeout(() => card.remove(), 200);
+                }, index * 30);
+                deletedCount++;
+            }
+        });
+
+        setTimeout(() => {
+            state.queue = state.queue.filter(item => !state.selectedItems.has(item.id));
+            state.selectedItems.clear();
+            updateDeleteButton();
+            log(`Deleted ${deletedCount} selected images.`);
+            updateStats();
+        }, deletedCount * 30 + 200);
+
+        elements.deleteSelectedModal.style.display = 'none';
     }
 
     // ============================================
@@ -1195,6 +1295,8 @@
         elements.apiKey.addEventListener('input', saveApiKey);
         elements.cancelDelete.addEventListener('click', cancelDelete);
         elements.confirmDelete.addEventListener('click', deleteAllImages);
+        elements.cancelDeleteSelected.addEventListener('click', cancelDeleteSelected);
+        elements.confirmDeleteSelected.addEventListener('click', deleteSelectedImages);
 
         setTimeout(() => lucide.createIcons(), 100);
     }
