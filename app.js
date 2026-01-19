@@ -34,7 +34,6 @@
     const state = {
         queue: [],
         isProcessing: false,
-        abortController: null,
         worker: null
     };
 
@@ -50,6 +49,7 @@
         startBtn: document.getElementById('startBtn'),
         stopBtn: document.getElementById('stopBtn'),
         deleteAllBtn: document.getElementById('deleteAllBtn'),
+        batchNumber: document.getElementById('batchNumber'),
         deleteConfirmModal: document.getElementById('deleteConfirmModal'),
         cancelDelete: document.getElementById('cancelDelete'),
         confirmDelete: document.getElementById('confirmDelete'),
@@ -511,6 +511,7 @@
             sendToWorker('processBatch', {
                 items: [itemToSend],
                 apiKey: elements.apiKey.value.trim(),
+                batchSize: Math.max(1, Math.min(50, parseInt(elements.batchNumber.value) || 5)),
                 config: {
                     style: elements.stylePrompt.value,
                     resolution: elements.resolution.value,
@@ -606,6 +607,15 @@
                 }
                 break;
 
+            case 'stopped':
+                log(`Batch stopped. ${data.completed} of ${data.total} items completed.`);
+                state.isProcessing = false;
+                state.abortController = null;
+                updateBatchButton('idle');
+                elements.stopBtn.style.display = 'none';
+                showToast(`Batch stopped. ${data.completed} images saved.`, 'info');
+                break;
+
             case 'zipReady':
                 downloadZipBlob(data.zipBlob);
                 break;
@@ -671,7 +681,6 @@
         saveApiKey();
 
         state.isProcessing = true;
-        state.abortController = new AbortController();
 
         updateBatchButton('running');
         elements.stopBtn.style.display = 'flex';
@@ -691,6 +700,7 @@
         sendToWorker('processBatch', {
             items: pendingItems,
             apiKey,
+            batchSize: Math.max(1, Math.min(50, parseInt(elements.batchNumber.value) || 5)),
             config: {
                 style: elements.stylePrompt.value,
                 resolution: elements.resolution.value,
@@ -702,23 +712,13 @@
     function stopBatch() {
         state.isProcessing = false;
 
-        if (state.abortController) {
-            state.abortController.abort();
-            state.abortController = null;
-        }
-
         if (state.worker) {
             state.worker.postMessage({ type: 'shutdown' });
-
-            setTimeout(() => {
-                state.worker.terminate();
-                initWorker();
-            }, 100);
         }
 
         elements.startBtn.style.display = 'flex';
         elements.stopBtn.style.display = 'none';
-        log('Batch processing stopped.');
+        log('Stopping batch... Current batch will finish, then stop.');
     }
 
     // ============================================
@@ -876,6 +876,9 @@
         const item = state.queue.find(i => i.id === itemId);
         if (!item) return;
 
+        const currentIndex = state.queue.findIndex(i => i.id === itemId);
+        const totalItems = state.queue.length;
+
         const overlay = document.createElement('div');
         overlay.className = 'image-modal-overlay';
         overlay.id = 'imageModalOverlay';
@@ -891,6 +894,24 @@
             overlay.remove();
         });
 
+        const navLeft = document.createElement('button');
+        navLeft.className = 'image-nav-btn image-nav-left';
+        navLeft.innerHTML = '<i data-lucide="chevron-left" size="32"></i>';
+        navLeft.title = 'Previous image (Left Arrow)';
+        navLeft.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigateImage(-1, overlay, modal, currentIndex, totalItems);
+        });
+
+        const navRight = document.createElement('button');
+        navRight.className = 'image-nav-btn image-nav-right';
+        navRight.innerHTML = '<i data-lucide="chevron-right" size="32"></i>';
+        navRight.title = 'Next image (Right Arrow)';
+        navRight.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigateImage(1, overlay, modal, currentIndex, totalItems);
+        });
+
         const imgContainer = document.createElement('div');
         imgContainer.className = 'image-modal-content';
 
@@ -898,6 +919,10 @@
         img.src = item.result || item.preview;
         img.alt = item.name;
         img.dataset.itemId = item.id;
+
+        const counter = document.createElement('div');
+        counter.className = 'image-modal-counter';
+        counter.textContent = `${currentIndex + 1} / ${totalItems}`;
 
         const info = document.createElement('div');
         info.className = 'image-modal-info';
@@ -907,13 +932,17 @@
         `;
 
         imgContainer.appendChild(img);
+        imgContainer.appendChild(counter);
         modal.appendChild(closeBtn);
+        modal.appendChild(navLeft);
+        modal.appendChild(navRight);
         modal.appendChild(imgContainer);
         modal.appendChild(info);
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
 
         lucide.createIcons();
+        updateNavButtons(navLeft, navRight, currentIndex, totalItems);
 
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) {
@@ -921,11 +950,62 @@
             }
         });
 
-        document.addEventListener('keydown', (e) => {
+        const keyHandler = (e) => {
             if (e.key === 'Escape') {
                 overlay.remove();
+            } else if (e.key === 'ArrowLeft') {
+                navigateImage(-1, overlay, modal, currentIndex, totalItems);
+            } else if (e.key === 'ArrowRight') {
+                navigateImage(1, overlay, modal, currentIndex, totalItems);
             }
-        }, { once: true });
+        };
+
+        document.addEventListener('keydown', keyHandler);
+
+        overlay.addEventListener('remove', () => {
+            document.removeEventListener('keydown', keyHandler);
+        });
+    }
+
+    function navigateImage(direction, overlay, modal, originalIndex, totalItems) {
+        let currentIdx = state.queue.findIndex(i => {
+            const img = modal.querySelector('img');
+            return img && img.dataset.itemId === i.id;
+        });
+
+        if (currentIdx === -1) currentIdx = originalIndex;
+
+        const newIdx = currentIdx + direction;
+        if (newIdx < 0 || newIdx >= totalItems) return;
+
+        const newItem = state.queue[newIdx];
+        if (!newItem) return;
+
+        const img = modal.querySelector('img');
+        const info = modal.querySelector('.image-modal-info');
+        const counter = modal.querySelector('.image-modal-counter');
+        const navLeft = modal.querySelector('.image-nav-left');
+        const navRight = modal.querySelector('.image-nav-right');
+
+        img.src = newItem.result || newItem.preview;
+        img.alt = newItem.name;
+        img.dataset.itemId = newItem.id;
+
+        info.innerHTML = `
+            <h3>${newItem.name}</h3>
+            <p>${newItem.status === 'done' ? 'Generated' : 'Pending'}</p>
+        `;
+
+        counter.textContent = `${newIdx + 1} / ${totalItems}`;
+
+        updateNavButtons(navLeft, navRight, newIdx, totalItems);
+    }
+
+    function updateNavButtons(navLeft, navRight, currentIndex, totalItems) {
+        navLeft.style.opacity = currentIndex === 0 ? '0.3' : '1';
+        navLeft.style.pointerEvents = currentIndex === 0 ? 'none' : 'auto';
+        navRight.style.opacity = currentIndex === totalItems - 1 ? '0.3' : '1';
+        navRight.style.pointerEvents = currentIndex === totalItems - 1 ? 'none' : 'auto';
     }
 
     // ============================================

@@ -25,9 +25,9 @@ self.onmessage = async function(e) {
     }
 };
 
-async function processBatch({ items, apiKey, config }) {
+async function processBatch({ items, apiKey, config, batchSize }) {
     let completed = 0;
-    const BATCH_SIZE = 5;
+    const BATCH_SIZE = Math.max(1, Math.min(50, batchSize || 5));
 
     self.postMessage({
         type: 'log',
@@ -38,9 +38,9 @@ async function processBatch({ items, apiKey, config }) {
         if (isAborted) {
             self.postMessage({
                 type: 'log',
-                data: { message: 'Batch processing aborted', level: 'info' }
+                data: { message: 'Batch processing stopped. Finishing current batch...', level: 'info' }
             });
-            return;
+            break;
         }
 
         const batch = items.slice(i, i + BATCH_SIZE);
@@ -55,6 +55,13 @@ async function processBatch({ items, apiKey, config }) {
         const results = await Promise.allSettled(
             batch.map(item => processWithRetry(item, apiKey, config))
         );
+
+        if (isAborted) {
+            self.postMessage({
+                type: 'log',
+                data: { message: 'Batch stopped. Results from current batch saved.', level: 'info' }
+            });
+        }
 
         results.forEach((result, index) => {
             const item = batch[index];
@@ -92,7 +99,11 @@ async function processBatch({ items, apiKey, config }) {
         }
     }
 
-    self.postMessage({ type: 'complete', data: null });
+    if (isAborted) {
+        self.postMessage({ type: 'stopped', data: { completed: completed, total: items.length } });
+    } else {
+        self.postMessage({ type: 'complete', data: null });
+    }
 }
 
 async function processWithRetry(item, apiKey, config) {
@@ -170,8 +181,8 @@ async function performApiCall(item, apiKey, config) {
         }
     });
 
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), 30000);
+        const timeoutController = new AbortController();
+        const timeoutId = setTimeout(() => timeoutController.abort(), 90000);
 
     let response;
     try {
